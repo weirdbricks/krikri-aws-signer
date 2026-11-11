@@ -20,7 +20,7 @@ never with whatever the implementation happens to output.
 
 ```sh
 shards install                        # needed once before specs/ameba
-crystal spec                          # full test suite (the only required check)
+crystal spec                          # full test suite
 just test                             # same suite, 4 real OS threads (minitest --parallel)
 just test-serial                      # single-threaded run
 crystal spec spec/canonical_spec.cr   # one spec file
@@ -28,9 +28,10 @@ crystal lib/ameba/bin/ameba.cr        # lint (ameba is not on PATH)
 crystal tool format src spec          # formatter; run before committing
 ```
 
-CI (`.github/workflows/ci.yml`) runs `crystal spec` on
-`crystallang/crystal:1.22.0-alpine`. Crystal `>= 1.10.0` per `shard.yml`.
-Tests use minitest.cr (`spec/` directory, `crystal spec` runs them).
+CI (`.github/workflows/ci.yml`) runs the formatter check, ameba and
+`crystal spec` on `crystallang/crystal:1.22.2-alpine`. Crystal `>= 1.10.0`
+per `shard.yml`. Tests use minitest.cr (`spec/` directory, `crystal spec`
+runs them).
 
 ## Scope
 

@@ -23,14 +23,21 @@ signer = KrikriAwsSigner::Signer.new("ec2", "us-east-1", access_key, secret_key,
 signer.sign(request) # mutates request.headers in place
 ```
 
-`sign` sets `X-Amz-Date` (kept if already present, otherwise the signing
+`sign` sets `X-Amz-Date` (kept if already present - and then it must be in
+`%Y%m%dT%H%M%SZ` form or `ArgumentError` is raised; otherwise the signing
 time), `X-Amz-Security-Token` (when a session token is given),
 `X-Amz-Content-Sha256` (the body's SHA-256, unless `add_sha: false` or the
 header is already set, e.g. to `UNSIGNED-PAYLOAD`), and `Authorization`
-covering every request header except `Authorization` itself. The lower-level
-pieces are public too: `KrikriAwsSigner::Canonical` (URI/query/header
-canonicalization) and `KrikriAwsSigner::Signature` (string-to-sign, signing
-key, signature).
+covering every request header except `Authorization` itself. A plain `Date`
+header is dropped, like botocore does; its value is reused for `X-Amz-Date`
+only when it already is a valid SigV4 timestamp. The request must carry a
+`Host` header (every AWS service requires it to be signed) or `sign` raises
+`ArgumentError` rather than producing a signature the service will reject.
+The lower-level pieces are public too: `KrikriAwsSigner::Canonical`
+(URI/query/header canonicalization) and `KrikriAwsSigner::Signature`
+(string-to-sign, signing key, signature). A `Signer` caches its derived
+signing key per day, so signing many requests runs the four-step HMAC chain
+only once a day.
 
 Not implemented (yet):
 
@@ -51,9 +58,11 @@ Not implemented (yet):
 
 ```sh
 shards install           # once
-crystal spec             # the full test suite (the only required check)
+crystal spec             # the full test suite
 just test                # same suite, 4 real OS threads (minitest --parallel)
 crystal spec spec/canonical_spec.cr   # one spec file
 crystal lib/ameba/bin/ameba.cr        # lint (ameba is not on PATH)
 crystal tool format src spec          # formatter; run before committing
 ```
+
+CI runs the formatter check, ameba and the spec suite on Crystal 1.22.

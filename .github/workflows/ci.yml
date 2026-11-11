@@ -4,10 +4,14 @@ on: [push, pull_request]
 jobs:
   spec:
     runs-on: ubuntu-latest
-    container: crystallang/crystal:1.22.0-alpine
+    container: crystallang/crystal:1.22.2-alpine
     steps:
       - uses: actions/checkout@v4
       - name: Install shards
         run: shards install
+      - name: Check formatting
+        run: crystal tool format src spec --check
+      - name: Run ameba
+        run: crystal lib/ameba/bin/ameba.cr
       - name: Run specs
         run: crystal spec

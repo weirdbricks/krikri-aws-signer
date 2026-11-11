@@ -35,6 +35,49 @@ describe KrikriAwsSigner::Signer do
     assert_equal "20150830T123600Z", request.headers["X-Amz-Date"]
   end
 
+  it "drops a calendar-format Date header and stamps X-Amz-Date from the signing time" do
+    request = make_request("GET", "/", HTTP::Headers{
+      "Host" => "example.amazonaws.com",
+      "Date" => "Mon, 01 Jan 2024 00:00:00 GMT",
+    })
+    make_signer.sign(request, add_sha: false, at: SIGNING_TIME)
+    assert_nil request.headers["Date"]?
+    assert_equal "20150830T123600Z", request.headers["X-Amz-Date"]
+  end
+
+  it "rejects a non-SigV4 X-Amz-Date instead of signing a garbage scope" do
+    request = make_request("GET", "/", HTTP::Headers{
+      "Host"       => "example.amazonaws.com",
+      "X-Amz-Date" => "Mon, 01 Jan 2024 00:00:00 GMT",
+    })
+    ex = assert_raises(ArgumentError) do
+      make_signer.sign(request, add_sha: false, at: SIGNING_TIME)
+    end
+    assert_includes ex.message.to_s, "X-Amz-Date"
+  end
+
+  it "rejects multiple Date headers" do
+    request = make_request("GET", "/", HTTP::Headers{"Host" => "example.amazonaws.com"})
+    request.headers.add("Date", "Mon, 01 Jan 2024 00:00:00 GMT")
+    request.headers.add("Date", "Tue, 02 Jan 2024 00:00:00 GMT")
+    ex = assert_raises(ArgumentError) do
+      make_signer.sign(request, add_sha: false, at: SIGNING_TIME)
+    end
+    assert_includes ex.message.to_s, "multiple Date headers"
+  end
+
+  it "refuses to sign a request without a Host header" do
+    request = make_request("GET", "/")
+    ex = assert_raises(ArgumentError) do
+      make_signer.sign(request, add_sha: false, at: SIGNING_TIME)
+    end
+    assert_includes ex.message.to_s, "Host"
+    ex = assert_raises(ArgumentError) do
+      make_signer.canonical_request(request)
+    end
+    assert_includes ex.message.to_s, "Host"
+  end
+
   it "adds X-Amz-Content-Sha256 and signs it by default" do
     request = make_request("POST", "/", HTTP::Headers{"Host" => "example.amazonaws.com"}, "Param1=value1")
     make_signer.sign(request, at: SIGNING_TIME)
@@ -102,10 +145,12 @@ describe KrikriAwsSigner::Signer do
   it "rejects a non-rewindable body without a payload hash" do
     body = SpecNonRewindableIO.new("x")
     request = HTTP::Request.new("POST", "/", HTTP::Headers{"Host" => "example.amazonaws.com"}, body)
-    ex = assert_raises(ArgumentError) do
+    request.headers.delete("Content-Length")
+    ex = assert_raises(IO::Error) do
       make_signer.sign(request, add_sha: false, at: SIGNING_TIME)
     end
     assert_includes ex.message.to_s, "X-Amz-Content-Sha256"
+    assert ex.cause.is_a?(IO::Error)
   end
 
   it "signs an absolute-form request target" do
@@ -120,5 +165,21 @@ describe KrikriAwsSigner::Signer do
     make_signer.canonical_request(request)
     assert_nil request.headers["Authorization"]?
     assert_nil request.headers["X-Amz-Date"]?
+  end
+
+  it "exposes a semantic version" do
+    assert_match(/^\d+\.\d+\.\d+$/, KrikriAwsSigner::VERSION)
+  end
+
+  it "re-signing a request on a different day uses that day's signing key" do
+    request = make_request("GET", "/", HTTP::Headers{"Host" => "example.amazonaws.com"})
+    signer = make_signer
+    signer.sign(request, add_sha: false, at: SIGNING_TIME)
+    first = request.headers["Authorization"].split("Signature=")[1]
+    request2 = make_request("GET", "/", HTTP::Headers{"Host" => "example.amazonaws.com"})
+    signer.sign(request2, add_sha: false, at: SIGNING_TIME + 1.day)
+    second = request2.headers["Authorization"].split("Signature=")[1]
+    refute_equal first, second
+    assert_includes request2.headers["Authorization"], "Credential=AKIDEXAMPLE/20150831/"
   end
 end

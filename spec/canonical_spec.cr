@@ -87,6 +87,10 @@ describe KrikriAwsSigner::Canonical do
       assert_equal "Param1=va%20lue", KrikriAwsSigner::Canonical.query("Param1=va%20lue")
     end
 
+    it "splits only on the first equals sign, keeping the rest as data" do
+      assert_equal "a=b%3Dc", KrikriAwsSigner::Canonical.query("a=b=c")
+    end
+
     it "treats a plus sign as literal data, not a space" do
       assert_equal "k%2B=v%2B", KrikriAwsSigner::Canonical.query("k+=v+")
     end
@@ -186,8 +190,9 @@ describe KrikriAwsSigner::Canonical do
       assert_equal "%2F%3D%2B%20", KrikriAwsSigner::Canonical.encode("/=+ ")
     end
 
-    it "keeps slashes only when asked" do
-      assert_equal "/a", KrikriAwsSigner::Canonical.encode("/a", keep_slash: true)
+    it "returns a clean value as itself, without allocating" do
+      clean = "aZ09-_.~"
+      assert_same clean, KrikriAwsSigner::Canonical.encode(clean)
     end
 
     it "encodes multi-byte characters per byte" do
