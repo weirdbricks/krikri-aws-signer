@@ -3,6 +3,22 @@ on: [push, pull_request]
 
 jobs:
   spec:
+    name: spec (Crystal ${{ matrix.crystal }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        crystal: ["1.22.2", "1.10.0"]
+    container: crystallang/crystal:${{ matrix.crystal }}-alpine
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install shards
+        run: shards install
+      - name: Run specs
+        run: crystal spec
+
+  lint:
+    name: format and ameba (Crystal 1.22.2)
     runs-on: ubuntu-latest
     container: crystallang/crystal:1.22.2-alpine
     steps:
@@ -13,5 +29,3 @@ jobs:
         run: crystal tool format src spec --check
       - name: Run ameba
         run: crystal lib/ameba/bin/ameba.cr
-      - name: Run specs
-        run: crystal spec

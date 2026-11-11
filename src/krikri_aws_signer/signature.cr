@@ -30,9 +30,14 @@ module KrikriAwsSigner
       OpenSSL::HMAC.digest(:sha256, key, "aws4_request")
     end
 
+    # Lowercase hex HMAC-SHA256 of *string_to_sign* under a derived signing key.
+    def sign(key : Bytes, string_to_sign : String) : String
+      OpenSSL::HMAC.hexdigest(:sha256, key, string_to_sign)
+    end
+
     # Lowercase hex HMAC-SHA256 of *string_to_sign* under the derived key.
     def signature(secret : String, date : String, region : String, service : String, string_to_sign : String) : String
-      OpenSSL::HMAC.hexdigest(:sha256, signing_key(secret, date, region, service), string_to_sign)
+      sign(signing_key(secret, date, region, service), string_to_sign)
     end
   end
 end

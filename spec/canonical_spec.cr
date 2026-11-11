@@ -57,6 +57,18 @@ describe KrikriAwsSigner::Canonical do
     it "treats a percent sign in the decoded path as data" do
       assert_equal "/100%25", KrikriAwsSigner::Canonical.path("/100%")
     end
+
+    it "returns the path verbatim when normalization is off" do
+      assert_equal "/a/../b", KrikriAwsSigner::Canonical.path("/a/../b", normalize: false)
+      assert_equal "/a/./b", KrikriAwsSigner::Canonical.path("/a/./b", normalize: false)
+      assert_equal "//a//b", KrikriAwsSigner::Canonical.path("//a//b", normalize: false)
+      assert_equal "/a%2fb", KrikriAwsSigner::Canonical.path("/a%2fb", normalize: false)
+      assert_equal "/a b", KrikriAwsSigner::Canonical.path("/a b", normalize: false)
+    end
+
+    it "maps an empty path to / with normalization off too" do
+      assert_equal "/", KrikriAwsSigner::Canonical.path("", normalize: false)
+    end
   end
 
   describe ".query" do
@@ -76,27 +88,8 @@ describe KrikriAwsSigner::Canonical do
       assert_equal "a=1&a=2", KrikriAwsSigner::Canonical.query("a=2&a=1")
     end
 
-    it "encodes keys and values per RFC 3986" do
-      assert_equal "%E1%88%B4=bar", KrikriAwsSigner::Canonical.query("ሴ=bar")
-      assert_equal "Param1=va%20lue", KrikriAwsSigner::Canonical.query("Param1=va lue")
-      assert_equal "k%2B=%2F%2C%3F", KrikriAwsSigner::Canonical.query("k+=/,?")
-    end
-
-    it "does not double-encode the wire form" do
-      assert_equal "%E1%88%B4=bar", KrikriAwsSigner::Canonical.query("%E1%88%B4=bar")
-      assert_equal "Param1=va%20lue", KrikriAwsSigner::Canonical.query("Param1=va%20lue")
-    end
-
     it "splits only on the first equals sign, keeping the rest as data" do
-      assert_equal "a=b%3Dc", KrikriAwsSigner::Canonical.query("a=b=c")
-    end
-
-    it "treats a plus sign as literal data, not a space" do
-      assert_equal "k%2B=v%2B", KrikriAwsSigner::Canonical.query("k+=v+")
-    end
-
-    it "keeps stray percent signs as data" do
-      assert_equal "a=100%25", KrikriAwsSigner::Canonical.query("a=100%")
+      assert_equal "a=b=c", KrikriAwsSigner::Canonical.query("a=b=c")
     end
 
     it "always emits key=value, even for bare keys and empty values" do
@@ -106,6 +99,23 @@ describe KrikriAwsSigner::Canonical do
 
     it "skips empty components" do
       assert_equal "a=1&b=2", KrikriAwsSigner::Canonical.query("a=1&&b=2")
+    end
+
+    it "signs the wire form as it appears, like the AWS SDKs" do
+      assert_equal "k+=v+", KrikriAwsSigner::Canonical.query("k+=v+")
+      assert_equal "a=%7E&b=~", KrikriAwsSigner::Canonical.query("a=%7E&b=~")
+      assert_equal "%e1%88%b4=bar", KrikriAwsSigner::Canonical.query("%e1%88%b4=bar")
+      assert_equal "Param1=va%20lue", KrikriAwsSigner::Canonical.query("Param1=va%20lue")
+      assert_equal "a=100%", KrikriAwsSigner::Canonical.query("a=100%")
+    end
+
+    it "encodes keys and values per RFC 3986 when asked" do
+      assert_equal "%E1%88%B4=bar", KrikriAwsSigner::Canonical.query("ሴ=bar", encode: true)
+      assert_equal "Param1=va%20lue", KrikriAwsSigner::Canonical.query("Param1=va lue", encode: true)
+      assert_equal "k%2B=%2F%2C%3F", KrikriAwsSigner::Canonical.query("k+=/,?", encode: true)
+      assert_equal "k%2B=v%2B", KrikriAwsSigner::Canonical.query("k+=v+", encode: true)
+      assert_equal "%E1%88%B4=bar", KrikriAwsSigner::Canonical.query("%E1%88%B4=bar", encode: true)
+      assert_equal "a=100%25", KrikriAwsSigner::Canonical.query("a=100%", encode: true)
     end
   end
 
@@ -118,6 +128,11 @@ describe KrikriAwsSigner::Canonical do
 
     it "maps an all-whitespace value to empty" do
       assert_equal "", KrikriAwsSigner::Canonical.trim_all("   \n  ")
+    end
+
+    it "returns a clean value as itself, without allocating" do
+      clean = "value1"
+      assert_same clean, KrikriAwsSigner::Canonical.trim_all(clean)
     end
   end
 
@@ -165,6 +180,26 @@ describe KrikriAwsSigner::Canonical do
       assert_equal "host", signed
     end
 
+    it "excludes the headers the AWS SDKs never sign" do
+      headers = HTTP::Headers{
+        "Host"              => "example.amazonaws.com",
+        "User-Agent"        => "krikri/1.0",
+        "Expect"            => "100-continue",
+        "Transfer-Encoding" => "chunked",
+        "X-Amzn-Trace-Id"   => "Root=1-abc",
+      }
+      canonical, signed = KrikriAwsSigner::Canonical.headers(headers)
+      assert_equal "host:example.amazonaws.com", canonical
+      assert_equal "host", signed
+    end
+
+    it "excludes caller-supplied names case-insensitively" do
+      headers = HTTP::Headers{"Host" => "example.amazonaws.com", "X-Custom" => "1"}
+      canonical, signed = KrikriAwsSigner::Canonical.headers(headers, ["X-CUSTOM"])
+      assert_equal "host:example.amazonaws.com", canonical
+      assert_equal "host", signed
+    end
+
     it "keeps empty-valued headers as empty values" do
       headers = HTTP::Headers{"X-Empty" => ""}
       canonical, signed = KrikriAwsSigner::Canonical.headers(headers)
@@ -182,12 +217,38 @@ describe KrikriAwsSigner::Canonical do
                    "\nhost;x-amz-date\ne3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
         canonical
     end
+
+    it "accepts a precomputed canonical-headers pair" do
+      pair = {"host:example.amazonaws.com", "host"}
+      canonical = KrikriAwsSigner::Canonical.request("get", "/", "", pair,
+        KrikriAwsSigner::Signer::EMPTY_PAYLOAD_HASH)
+      assert_equal "GET\n/\n\nhost:example.amazonaws.com\n\nhost\n" \
+                   "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        canonical
+    end
+
+    it "honors the path-normalization and query-encoding switches" do
+      pair = {"host:example.amazonaws.com", "host"}
+      payload = KrikriAwsSigner::Signer::EMPTY_PAYLOAD_HASH
+      assert_includes KrikriAwsSigner::Canonical.request(
+        "get", "/a/../b", "k+=v", pair, payload, normalize_path: false),
+        "\n/a/../b\nk+=v\n"
+      assert_includes KrikriAwsSigner::Canonical.request(
+        "get", "/b", "k+=v", pair, payload, encode_query: true),
+        "\n/b\nk%2B=v\n"
+    end
   end
 
   describe ".encode and .decode" do
     it "encodes all bytes except unreserved ones" do
       assert_equal "aZ09-_.~", KrikriAwsSigner::Canonical.encode("aZ09-_.~")
       assert_equal "%2F%3D%2B%20", KrikriAwsSigner::Canonical.encode("/=+ ")
+    end
+
+    it "encodes into an existing IO" do
+      io = IO::Memory.new
+      KrikriAwsSigner::Canonical.encode_into(io, "a/b")
+      assert_equal "a%2Fb", io.to_s
     end
 
     it "returns a clean value as itself, without allocating" do
@@ -208,6 +269,11 @@ describe KrikriAwsSigner::Canonical do
       assert_equal "100%", KrikriAwsSigner::Canonical.decode("100%")
       assert_equal "a+b", KrikriAwsSigner::Canonical.decode("a+b")
       assert_equal "%zz", KrikriAwsSigner::Canonical.decode("%zz")
+    end
+
+    it "keeps a truncated escape at the end of the value as data" do
+      assert_equal "%4", KrikriAwsSigner::Canonical.decode("%4")
+      assert_equal "a%2", KrikriAwsSigner::Canonical.decode("a%2")
     end
 
     it "round-trips through decode and encode" do

@@ -32,7 +32,28 @@ describe KrikriAwsSigner::Signature do
   it "signs the string to sign to lowercase hex" do
     signature = KrikriAwsSigner::Signature.signature(
       SpecHelpers::SECRET_KEY, "20150830", "us-east-1", "service", "string-to-sign")
+
+    # Known answer: the AWS test suite's get-vanilla string to sign.
+    request = make_request("GET", "/", HTTP::Headers{
+      "Host"       => "example.amazonaws.com",
+      "X-Amz-Date" => "20150830T123600Z",
+    })
+    canonical_request = KrikriAwsSigner::Canonical.request("GET", "/", "", request.headers,
+      KrikriAwsSigner::Signer::EMPTY_PAYLOAD_HASH)
+    string_to_sign = KrikriAwsSigner::Signature.string_to_sign(
+      "20150830T123600Z", "20150830/us-east-1/service/aws4_request", canonical_request)
+    assert_equal "5fa00fa31553b73ebf1942676e86291e8372ff2a2260956d9b8aae1d763fbf31",
+      KrikriAwsSigner::Signature.signature(SpecHelpers::SECRET_KEY, "20150830", "us-east-1",
+        "service", string_to_sign)
+
     assert_equal 64, signature.size
     assert_match(/^[0-9a-f]{64}$/, signature)
+  end
+
+  it "signs a string to sign under a precomputed key" do
+    key = KrikriAwsSigner::Signature.signing_key(SpecHelpers::SECRET_KEY, "20150830", "us-east-1", "service")
+    assert_equal KrikriAwsSigner::Signature.signature(SpecHelpers::SECRET_KEY, "20150830",
+      "us-east-1", "service", "string-to-sign"),
+      KrikriAwsSigner::Signature.sign(key, "string-to-sign")
   end
 end
