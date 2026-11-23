@@ -4,16 +4,16 @@ AWS [Signature Version 4](https://docs.aws.amazon.com/IAM/latest/UserGuide/refer
 request signing in pure Crystal, built on the stdlib (`OpenSSL::HMAC`,
 `Digest::SHA256`) with no other dependencies.
 
-## Provenance
+## Installation
 
-Implemented from AWS's public "Signature Version 4 signing process"
-documentation. The correctness bar is AWS's own tooling: the test suite pins
-the expected signatures of AWS's public SigV4 test-suite vectors (every one
-independently re-derived with botocore 1.37.9 before being pinned), plus
-botocore-derived vectors for the cases that suite leaves ambiguous - STS session
-tokens, S3 path handling, query strings that are already percent-encoded, and
-the AWS SDKs' unsigned-header blacklist. See `spec/official_vectors_spec.cr` and
-`spec/parity_vectors_spec.cr` for the full corpora and their provenance notes.
+Add the shard to `shard.yml`:
+
+```yaml
+dependencies:
+  krikri-aws-signer:
+    github: weirdbricks/krikri-aws-signer
+    version: ~> 1.0
+```
 
 ## Usage
 
@@ -51,16 +51,22 @@ key per day, so signing many requests runs the four-step HMAC chain only once a
 day; the cache is mutex-protected, so one `Signer` can be shared between fibers
 and threads.
 
-Not implemented (yet):
+## Correctness
 
-- Query-string (presigned URL) signing.
-- Chunked/streaming payload signing (`aws-chunked`).
+Implemented from AWS's public "Signature Version 4 signing process"
+documentation. The correctness bar is AWS's own tooling: the test suite pins
+the expected signatures of AWS's public SigV4 test-suite vectors (every one
+independently re-derived with botocore 1.37.9 before being pinned), plus
+botocore-derived vectors for the cases that suite leaves ambiguous - STS session
+tokens, S3 path handling, query strings that are already percent-encoded, and
+the AWS SDKs' unsigned-header blacklist. See `spec/official_vectors_spec.cr` and
+`spec/parity_vectors_spec.cr` for the full corpora and their provenance notes.
 
-## Status
+What is covered:
 
-- Full coverage of the header-based SigV4 signing path, including STS session
-  tokens, multi-value header values, and the S3 variant that signs the request
-  path verbatim (`Signer::Flavor::S3`).
+- The header-based SigV4 path, including STS session tokens, multi-value header
+  values, and the S3 variant that signs the request path verbatim
+  (`Signer::Flavor::S3`).
 - Query strings are signed exactly as they appear on the wire, which is what
   botocore and the AWS SDKs do: a literal `+` stays a plus (it is not treated as
   a space and not re-encoded), an already-encoded `%7E` stays encoded, and
@@ -83,16 +89,17 @@ Deliberate differences from botocore (verified against botocore 1.37.9):
   rewritten to RFC 822 as botocore does. Set `X-Amz-Date` explicitly when the
   timestamp matters.
 
+Not implemented (yet): query-string (presigned URL) signing and
+chunked/streaming payload signing (`aws-chunked`).
+
 ## Development
 
 ```sh
-shards install           # once
-crystal spec             # the full test suite
-just test                # same suite, 4 OS threads (minitest --parallel)
-crystal spec spec/canonical_spec.cr   # one spec file
-crystal lib/ameba/bin/ameba.cr        # lint (ameba is not on PATH)
-crystal tool format src spec          # formatter; run before committing
+shards install                         # once
+crystal spec                           # full test suite
+just test                              # same suite, 4 OS threads
+crystal lib/ameba/bin/ameba.cr         # lint (ameba is not on PATH)
+crystal tool format src spec           # formatter; run before committing
 ```
 
-CI runs the formatter check and ameba on Crystal 1.22, and the spec suite on
-Crystal 1.22 and 1.10 (the floor `shard.yml` claims).
+See `AGENTS.md` for the repository conventions and release process.

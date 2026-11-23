@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.0.0
+
+- Declare the public API stable: `Signer` (both flavors), `Canonical` and
+  `Signature` are the supported 1.x surface, and breaking changes now require a
+  major version. No functional changes since 0.3.0.
+
 ## 0.3.0
 
 - Sign S3 requests with `Signer::Flavor::S3`, which uses the request path

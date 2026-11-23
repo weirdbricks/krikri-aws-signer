@@ -43,6 +43,13 @@ CI (`.github/workflows/ci.yml`) runs the formatter check and ameba on
 (the floor `shard.yml` claims). Tests use minitest.cr (`spec/` directory,
 `crystal spec` runs them).
 
+## Release
+
+Bump `version:` in `shard.yml`, add the matching `CHANGELOG.md` entry, commit,
+then tag `vX.Y.Z` and push the tag. `.github/workflows/release.yml` refuses to
+release unless the tag matches `shard.yml`, so the bump and the tag must land
+together.
+
 ## Scope
 
 Header-based SigV4 signing only. `Signer::Flavor::S3` covers S3's verbatim path
